@@ -10,7 +10,13 @@ def create_hf_pipeline(opt, env):
     tokenizer = AutoTokenizer.from_pretrained(opt.model_name, trust_remote_code = True, token = hf_key)
     pipe = pipeline("text-generation", model=model, tokenizer=tokenizer, max_new_tokens=opt.hf_max_new_tokens, temperature=opt.temperature)
     llm = HuggingFacePipeline(pipeline=pipe)
+    
+
+    return llm
+
+def create_hf_embeddings(opt,env):
+    hf_key = env['HUGGINGFACEHUB_API_TOKEN']
+
     embeddings = HuggingFaceInstructEmbeddings()
 
-    return llm, embeddings
-
+    return embeddings

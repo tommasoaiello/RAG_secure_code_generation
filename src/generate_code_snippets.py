@@ -1,5 +1,3 @@
-from utils.openai_utils import is_openai_model, build_chat_model
-from utils.hf_utils import create_hf_pipeline
 from utils.utils import load_yaml, init_argument_parser, sanitize_output, fill_default_parameters, save_parameters_file, save_input_prompt_file, is_valid_url
 from utils.path_utils import create_folder_for_experiment, folder_exists_and_not_empty
 from dotenv import dotenv_values
@@ -14,20 +12,14 @@ import random
 import numpy as np
 from utils.few_shot_utils import create_few_shot
 from utils.rag_utils import build_scientific_papers_loader, build_documents_retriever, build_web_page_loader, format_docs
+from model_creation import build_model, build_embeddings
 
+def generate_code_snippets(opt, model, embeddings):
 
-
-def generate_code_snippets(opt, env):
     #fix seed if it is not None
     if opt.seed is not None:
         random.seed(opt.seed)
         np.random.seed(opt.seed)
-
-    use_openai_api = is_openai_model(opt.model_name)
-
-    #load model 
-    model, embeddings = build_chat_model(opt, env) if use_openai_api else create_hf_pipeline(opt, env)
-   
         
     # load template
     template = load_yaml(opt.template)
@@ -64,35 +56,13 @@ def generate_code_snippets(opt, env):
     
     #get experiment folder
     experiment_folder = create_folder_for_experiment(opt)
+
     #build prompt and chain
-    prompt = ChatPromptTemplate.from_messages([("system", template["input"]), ("human", "{input}")])
-    chain = prompt | model | StrOutputParser() | sanitize_output
-    input_prompt = prompt.format(**prompt_parameters)
-    print(input_prompt)
-    save_input_prompt_file(os.path.join(experiment_folder, opt.input_prompt_file_name), input_prompt)
-    save_parameters_file(os.path.join(experiment_folder, opt.parameters_file_name), opt)
-    #run experiments
-    i = 0
-    failures = 0
-    while i < opt.experiments:
-        print(f"Experiment {i}")
-        try:
-            response = chain.invoke(prompt_parameters)
-            save_dir = os.path.join(experiment_folder, f"exp_{i}")
-            os.makedirs(save_dir, exist_ok=True)
-            with open(os.path.join(save_dir, 'generated.py'), 'w') as f:
-                f.write(response)
-            i = i + 1
-            failures = 0
-        except Exception as e:
-            print(e)
-            print("Experiment failed, try again")
-            failures = failures + 1
-            if failures > 10:
-                print("Too many failures, moving to next experiment")
-                i = i + 1
-                continue
-            continue
+    chain = model.chain_building(template,opt)
+
+    #run experiment
+    model.run_experiment(chain, opt, prompt_parameters, experiment_folder)
+
         
     
 
@@ -101,6 +71,7 @@ def add_parse_arguments(parser):
     #model parameters
     parser.add_argument('--model_name', type=str, default='gpt-3.5-turbo-0613', help='name of the model')
     parser.add_argument('--temperature', type=float, default=1.0, help='model temperature')
+    parser.add_argument('--embeddings_name', type=str, default='text-embedding-ada-002-v2', help='name of the embeddings')
 
     #task parameters
     parser.add_argument('--task', type=str, default='data/tasks/detect_xss_simple_prompt.txt', help='input task')
@@ -145,7 +116,9 @@ def add_parse_arguments(parser):
 def main():
     opt = init_argument_parser(add_parse_arguments)
     env = dotenv_values()
-    generate_code_snippets(opt, env)
+    model = build_model(opt,env)
+    embeddings = build_embeddings(opt,env)
+    generate_code_snippets(opt, model, embeddings)
 
 if __name__ == '__main__':
     main()

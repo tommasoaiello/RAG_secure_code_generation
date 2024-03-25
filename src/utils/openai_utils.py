@@ -20,6 +20,12 @@ def is_openai_model(model_name:str)->bool:
 def build_chat_model(opt, env):
     openai_key = env['OPENAI_API_KEY']
     model = ChatOpenAI(temperature=opt.temperature, openai_api_key=openai_key, model=opt.model_name)
-    embeddings = OpenAIEmbeddings(api_key = openai_key)
-    return model, embeddings
+    # embeddings = OpenAIEmbeddings(api_key = openai_key)
+    return model
 
+
+def build_openai_embeddings_model(opt,env):
+    openai_key = env['OPENAI_API_KEY']
+    embeddings = OpenAIEmbeddings(api_key = openai_key)
+
+    return embeddings

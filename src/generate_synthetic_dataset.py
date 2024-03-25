@@ -18,19 +18,13 @@ import random
 import numpy as np
 from utils.few_shot_utils import create_few_shot
 from utils.rag_utils import build_scientific_papers_loader, build_documents_retriever, build_web_page_loader, format_docs
+from model_creation import build_embeddings, build_model
 
-
-def generate_synthetic_dataset(opt, env):
+def generate_synthetic_dataset(opt, model, embeddings):
     #fix seed if it is not None
     if opt.seed is not None:
         random.seed(opt.seed)
         np.random.seed(opt.seed)
-
-    use_openai_api = is_openai_model(opt.model_name)
-
-    #load model 
-    model, embeddings = build_chat_model(opt, env) if use_openai_api else create_hf_pipeline(opt, env)
-   
         
     # load template
     template = load_yaml(opt.template)
@@ -64,44 +58,14 @@ def generate_synthetic_dataset(opt, env):
 
     #get experiment folder
     experiment_folder = create_folder_for_experiment(opt)
-    output_parser = PydanticOutputParser(pydantic_object=XSS_dataset)
 
     #build prompt and chain
-    prompt = ChatPromptTemplate(
-        messages=[
-            SystemMessagePromptTemplate.from_template(template['input']+ "\n{format_instructions}"),
-            HumanMessagePromptTemplate.from_template("{input}")  
-        ],
-        input_variables=["input"],
-        partial_variables={"format_instructions": output_parser.get_format_instructions()}
-    )
-    chain = prompt | model | output_parser
-    input_prompt = prompt.format(**prompt_parameters)
-    print(input_prompt)
-    save_input_prompt_file(os.path.join(experiment_folder, opt.input_prompt_file_name), input_prompt)
-    save_parameters_file(os.path.join(experiment_folder, opt.parameters_file_name), opt)
-    #run experiments
-    i = 0
-    failures = 0
-    while i < opt.experiments:
-        print(f"Experiment {i}")
-        try:
-            df= fill_df(chain, prompt_parameters)
-            save_file = os.path.join(experiment_folder, f"exp_{i}.csv")
-            df.to_csv(save_file, index=False)
-            for s in opt.subset:
-                save_subset_of_df(save_file, s)
-            i = i + 1
-            failures = 0
-        except Exception as e:
-            #print(e)
-            print("Experiment failed, try again")
-            failures = failures + 1
-            if failures > 10:
-                print("Too many failures, moving to next experiment")
-                i = i + 1
-                continue
-            continue
+    chain = model.synthetic_chain_building(template,opt)
+
+    #run experiment
+    model.create_synthetic_dataset(chain, opt, prompt_parameters, experiment_folder)
+
+
         
 
 def add_parse_arguments(parser):
@@ -109,6 +73,8 @@ def add_parse_arguments(parser):
     #model parameters
     parser.add_argument('--model_name', type=str, default='gpt-3.5-turbo-0613', help='name of the model')
     parser.add_argument('--temperature', type=float, default=1.0, help='model temperature')
+    parser.add_argument('--embeddings_name', type=str, default='text-embedding-ada-002-v2', help='name of the embeddings')
+
 
     #task parameters
     parser.add_argument('--task', type=str, default='data/tasks/detect_xss_simple_prompt.txt', help='input task')
@@ -153,7 +119,9 @@ def add_parse_arguments(parser):
 def main():
     opt = init_argument_parser(add_parse_arguments)
     env = dotenv_values()
-    generate_synthetic_dataset(opt, env)
+    model = build_model(opt,env)
+    embeddings = build_embeddings(opt,env)
+    generate_synthetic_dataset(opt, model, embeddings)
 
 if __name__ == '__main__':
     main()
